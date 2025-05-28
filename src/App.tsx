@@ -73,13 +73,13 @@ const ParkingControlApp = () => {
 
   // Load saved data on component mount
   useEffect(() => {
-    const savedVehicles = JSON.parse(sessionStorage.getItem('vehicles') || '[]') as Vehicle[];
+    const savedVehicles = JSON.parse(localStorage.getItem('vehicles') || '[]') as Vehicle[];
     setVehicles(savedVehicles);
   }, []);
 
-  // Save to sessionStorage whenever vehicles change
+  // Save to localStorage whenever vehicles change
   useEffect(() => {
-    sessionStorage.setItem('vehicles', JSON.stringify(vehicles));
+    localStorage.setItem('vehicles', JSON.stringify(vehicles));
   }, [vehicles]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
