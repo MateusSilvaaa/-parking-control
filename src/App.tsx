@@ -85,32 +85,11 @@ const ParkingControlApp = () => {
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
-    // Formatação especial para o campo de placa
-    if (name === 'placa') {
-      // Remove qualquer hífen existente
-      const cleanValue = value.replace(/-/g, '').toUpperCase();
-      
-      // Se tiver 3 ou mais caracteres, adiciona o hífen após o terceiro caractere
-      if (cleanValue.length > 3) {
-        const formattedValue = `${cleanValue.substring(0, 3)}-${cleanValue.substring(3)}`;
-        setFormData(prev => ({
-          ...prev,
-          [name]: formattedValue
-        }));
-      } else {
-        // Menos de 3 caracteres, apenas mantém o valor limpo
-        setFormData(prev => ({
-          ...prev,
-          [name]: cleanValue
-        }));
-      }
-    } else {
-      // Para outros campos, apenas converte para maiúsculas
-      setFormData(prev => ({
-        ...prev,
-        [name]: value.toUpperCase()
-      }));
-    }
+    // Para todos os campos, converte para maiúsculas
+    setFormData(prev => ({
+      ...prev,
+      [name]: value.toUpperCase()
+    }));
   };
   
   // Função para lidar com a tecla Enter nos campos
@@ -169,16 +148,13 @@ const ParkingControlApp = () => {
   };
 
   const handleEdit = (vehicle: Vehicle) => {
-    // Se o veículo não tiver TAG, gera automaticamente
-    const tagValue = vehicle.telefone || getNextTagNumber();
-    
     setEditingVehicle(vehicle.id);
     setEditFormData({
       placa: vehicle.placa,
       modelo: vehicle.modelo,
       cor: vehicle.cor,
       responsavel: vehicle.responsavel,
-      telefone: tagValue,
+      telefone: vehicle.telefone,
       observacoes: vehicle.observacoes
     });
   };
@@ -219,32 +195,11 @@ const ParkingControlApp = () => {
   const handleEditInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
-    // Formatação especial para o campo de placa
-    if (name === 'placa') {
-      // Remove qualquer hífen existente
-      const cleanValue = value.replace(/-/g, '').toUpperCase();
-      
-      // Se tiver 3 ou mais caracteres, adiciona o hífen após o terceiro caractere
-      if (cleanValue.length > 3) {
-        const formattedValue = `${cleanValue.substring(0, 3)}-${cleanValue.substring(3)}`;
-        setEditFormData(prev => ({
-          ...prev,
-          [name]: formattedValue
-        }));
-      } else {
-        // Menos de 3 caracteres, apenas mantém o valor limpo
-        setEditFormData(prev => ({
-          ...prev,
-          [name]: cleanValue
-        }));
-      }
-    } else {
-      // Para outros campos, apenas converte para maiúsculas
-      setEditFormData(prev => ({
-        ...prev,
-        [name]: value.toUpperCase()
-      }));
-    }
+    // Para todos os campos, converte para maiúsculas
+    setEditFormData(prev => ({
+      ...prev,
+      [name]: value.toUpperCase()
+    }));
   };
   
   // Função para lidar com a tecla Enter nos campos do formulário de edição
@@ -381,9 +336,11 @@ const ParkingControlApp = () => {
   };
 
   const filteredVehicles = vehicles.filter(vehicle => {
-    const matchesSearch = vehicle.placa.includes(searchTerm.toUpperCase()) ||
-                         vehicle.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         vehicle.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = 
+      vehicle.telefone.includes(searchTerm.toUpperCase()) ||  // TAG é verificada primeiro
+      vehicle.placa.includes(searchTerm.toUpperCase()) ||
+      vehicle.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      vehicle.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (activeTab === 'dentro') return vehicle.status === 'DENTRO' && matchesSearch;
     if (activeTab === 'historico') return vehicle.status === 'SAIU' && matchesSearch;
@@ -472,28 +429,6 @@ const ParkingControlApp = () => {
       <div className="content">
         {/* Entrada Tab */}
         {activeTab === 'entrada' && (
-          <div className="w-full max-w-800">
-            {!showForm ? (
-              <div className="empty-state">
-                <DirectionsCarIcon className="empty-state-icon" />
-                <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-                  <button
-                    onClick={() => {
-                      // Preenche automaticamente o campo TAG com o próximo número disponível
-                      setFormData(prev => ({
-                        ...prev,
-                        telefone: getNextTagNumber()
-                      }));
-                      setShowForm(true);
-                    }}
-                    className="btn btn-large"
-                  >
-                    <AddIcon />
-                    Registrar Entrada
-                  </button>
-                </div>
-              </div>
-            ) : (
               <div className="fade-in">
                 <div className="form-container">
                   <h2 className="form-title">Nova Entrada</h2>
@@ -628,9 +563,7 @@ const ParkingControlApp = () => {
                     </button>
                   </div>
                 </div>
-                </div>
-            )}
-          </div>
+            </div>
         )}
 
         {/* Relatórios Tab */}
