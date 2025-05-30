@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
+import React, { useState, useEffect, ChangeEvent } from 'react';
 import EditIcon from '@mui/icons-material/Edit';
 import LogoutIcon from '@mui/icons-material/Logout';
 import AddIcon from '@mui/icons-material/Add';
@@ -7,33 +7,32 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
-import SaveIcon from '@mui/icons-material/Save';
 import './theme.css';
 
-// Definição de tipos
-interface VehicleData {
-  placa: string;
-  modelo: string;
-  cor: string;
-  responsavel: string;
-  telefone: string;
-  observacoes: string;
-}
-
-interface Vehicle extends VehicleData {
-  id: number;
-  entrada: string;
-  saida: string | null;
-  status: 'DENTRO' | 'SAIU';
-}
+import { 
+  Vehicle,
+  addVehicle,
+  updateVehicle,
+  subscribeToVehicles
+} from './services/firebase';
 
 const ParkingControlApp = () => {
   const [activeTab, setActiveTab] = useState('entrada');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [editingVehicle, setEditingVehicle] = useState<number | null>(null);
-  const [editFormData, setEditFormData] = useState<VehicleData>({placa: '', modelo: '', cor: '', responsavel: '', telefone: '', observacoes: ''});
+  const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Omit<Vehicle, 'id' | 'timestamp'>>({
+    placa: '',
+    modelo: '',
+    cor: '',
+    responsavel: '',
+    telefone: '',
+    observacoes: '',
+    entrada: '',
+    saida: null,
+    status: 'DENTRO'
+  });
   const [reportType, setReportType] = useState('hoje');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
@@ -60,16 +59,6 @@ const ParkingControlApp = () => {
     // Formata o número com zeros à esquerda (ex: 01, 02, etc.)
     return nextNumber.toString().padStart(2, '0');
   };
-  
-  // Form data
-  const [formData, setFormData] = useState<VehicleData>({
-    placa: '',
-    modelo: '',
-    cor: '',
-    responsavel: '',
-    telefone: '',
-    observacoes: ''
-  });
 
   // Load saved data on component mount
   useEffect(() => {
@@ -82,10 +71,38 @@ const ParkingControlApp = () => {
     localStorage.setItem('vehicles', JSON.stringify(vehicles));
   }, [vehicles]);
 
+  // Inscrever-se para atualizações em tempo real
+  useEffect(() => {
+    const unsubscribe = subscribeToVehicles((updatedVehicles) => {
+      setVehicles(updatedVehicles);
+    });
+
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, []);
+
+  // Atualiza o formulário quando um veículo é selecionado para edição
+  useEffect(() => {
+    if (editingVehicle) {
+      const vehicle = vehicles.find(v => v.id === editingVehicle);
+      if (vehicle) {
+        setFormData({
+          placa: vehicle.placa,
+          modelo: vehicle.modelo,
+          cor: vehicle.cor,
+          responsavel: vehicle.responsavel,
+          telefone: vehicle.telefone,
+          observacoes: vehicle.observacoes,
+          entrada: vehicle.entrada,
+          saida: vehicle.saida,
+          status: vehicle.status
+        });
+      }
+    }
+  }, [editingVehicle, vehicles]);
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    
-    // Para todos os campos, converte para maiúsculas
     setFormData(prev => ({
       ...prev,
       [name]: value.toUpperCase()
@@ -114,114 +131,97 @@ const ParkingControlApp = () => {
     }
   };
 
-  const handleEntrada = () => {
+  const handleEntrada = async () => {
     if (!formData.placa.trim()) return;
 
-    const newVehicle: Vehicle = {
-      id: Date.now(),
-      ...formData,
-      entrada: new Date().toLocaleString('pt-BR'),
-      saida: null,
-      status: 'DENTRO' as const
-    };
+    try {
+      await addVehicle({
+        ...formData,
+        entrada: new Date().toLocaleString('pt-BR'),
+      });
 
-    setVehicles(prev => [...prev, newVehicle]);
+      setFormData({
+        placa: '',
+        modelo: '',
+        cor: '',
+        responsavel: '',
+        telefone: '',
+        observacoes: '',
+        entrada: '',
+        saida: null,
+        status: 'DENTRO'
+      });
+      setShowForm(false);
+    } catch (error) {
+      console.error('Erro ao registrar entrada:', error);
+      alert('Erro ao registrar entrada do veículo');
+    }
+  };
+
+  const handleSaida = async (vehicleId: string | undefined) => {
+    if (!vehicleId) return;
+    
+    try {
+      await updateVehicle(vehicleId, {
+        saida: new Date().toLocaleString('pt-BR'),
+        status: 'SAIU'
+      });
+    } catch (error) {
+      console.error('Erro ao registrar saída:', error);
+      alert('Erro ao registrar saída do veículo');
+    }
+  };
+
+  const handleEdit = (vehicle: Vehicle) => {
+    if (vehicle.id) {
+      setEditingVehicle(vehicle.id);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!formData.placa.trim() || !editingVehicle) return;
+    
+    try {
+      // Atualiza no Firebase
+      await updateVehicle(editingVehicle, {
+        ...formData,
+        // Mantém o timestamp original
+        timestamp: vehicles.find(v => v.id === editingVehicle)?.timestamp
+      });
+
+      // Limpa o formulário e sai do modo de edição
+      setFormData({
+        placa: '',
+        modelo: '',
+        cor: '',
+        responsavel: '',
+        telefone: '',
+        observacoes: '',
+        entrada: '',
+        saida: null,
+        status: 'DENTRO'
+      });
+      setEditingVehicle(null);
+    } catch (error) {
+      console.error('Erro ao salvar edição:', error);
+      alert('Erro ao salvar as alterações do veículo');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingVehicle(null);
+    // Limpa o formulário ao cancelar
     setFormData({
       placa: '',
       modelo: '',
       cor: '',
       responsavel: '',
       telefone: '',
-      observacoes: ''
+      observacoes: '',
+      entrada: '',
+      saida: null,
+      status: 'DENTRO'
     });
-    setShowForm(false);
-  };
-
-  const handleSaida = (vehicleId: number) => {
-    setVehicles(prev => 
-      prev.map(vehicle => 
-        vehicle.id === vehicleId 
-          ? { ...vehicle, saida: new Date().toLocaleString('pt-BR'), status: 'SAIU' as const }
-          : vehicle
-      )
-    );
-  };
-
-  const handleEdit = (vehicle: Vehicle) => {
-    setEditingVehicle(vehicle.id);
-    setEditFormData({
-      placa: vehicle.placa,
-      modelo: vehicle.modelo,
-      cor: vehicle.cor,
-      responsavel: vehicle.responsavel,
-      telefone: vehicle.telefone,
-      observacoes: vehicle.observacoes
-    });
-  };
-
-  const handleSaveEdit = () => {
-    if (!editFormData.placa.trim()) return;
-    
-    setVehicles(prev =>
-      prev.map(vehicle =>
-        vehicle.id === editingVehicle
-          ? { ...vehicle, ...editFormData }
-          : vehicle
-      )
-    );
-    setEditingVehicle(null);
-    setEditFormData({
-      placa: '',
-      modelo: '',
-      cor: '',
-      responsavel: '',
-      telefone: '',
-      observacoes: ''
-    });
-  };
-
-  const handleCancelEdit = () => {
-    setEditingVehicle(null);
-    setEditFormData({
-      placa: '',
-      modelo: '',
-      cor: '',
-      responsavel: '',
-      telefone: '',
-      observacoes: ''
-    });
-  };
-
-  const handleEditInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    
-    // Para todos os campos, converte para maiúsculas
-    setEditFormData(prev => ({
-      ...prev,
-      [name]: value.toUpperCase()
-    }));
-  };
-  
-  // Função para lidar com a tecla Enter nos campos do formulário de edição
-  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault(); // Evita o comportamento padrão do Enter
-      
-      // Usa tabIndex para mover para o próximo campo
-      const inputs = document.querySelectorAll('.edit-form input, .edit-form textarea');
-      const currentIndex = Array.from(inputs).indexOf(e.currentTarget);
-      
-      if (currentIndex < inputs.length - 1) {
-        // Se não for o último campo, move para o próximo campo
-        (inputs[currentIndex + 1] as HTMLElement).focus();
-      } else {
-        // Se for o último campo (observações), foca no botão Salvar
-        const saveButton = document.querySelector('.save-button') as HTMLElement;
-        if (saveButton) {
-          saveButton.focus();
-        }
-      }
-    }
   };
 
   // Relatório Functions
@@ -758,9 +758,8 @@ const ParkingControlApp = () => {
                             <input
                               type="text"
                               name="placa"
-                              value={editFormData.placa}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.placa}
+                              onChange={handleInputChange}
                               placeholder="ABC-1234"
                               className="form-control text-lg font-mono"
                               required
@@ -774,9 +773,8 @@ const ParkingControlApp = () => {
                             <input
                               type="text"
                               name="telefone"
-                              value={editFormData.telefone}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.telefone}
+                              onChange={handleInputChange}
                               placeholder="Ex: 001"
                               className="form-control"
                             />
@@ -789,9 +787,8 @@ const ParkingControlApp = () => {
                             <input
                               type="text"
                               name="modelo"
-                              value={editFormData.modelo}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.modelo}
+                              onChange={handleInputChange}
                               placeholder="Ex: Honda Civic"
                               className="form-control"
                             />
@@ -804,9 +801,8 @@ const ParkingControlApp = () => {
                             <input
                               type="text"
                               name="cor"
-                              value={editFormData.cor}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.cor}
+                              onChange={handleInputChange}
                               placeholder="Ex: Branco"
                               className="form-control"
                             />
@@ -819,9 +815,8 @@ const ParkingControlApp = () => {
                             <input
                               type="text"
                               name="responsavel"
-                              value={editFormData.responsavel}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.responsavel}
+                              onChange={handleInputChange}
                               placeholder="Nome do responsável"
                               className="form-control"
                             />
@@ -833,9 +828,8 @@ const ParkingControlApp = () => {
                             </label>
                             <textarea
                               name="observacoes"
-                              value={editFormData.observacoes}
-                              onChange={handleEditInputChange}
-                              onKeyDown={handleEditKeyDown}
+                              value={formData.observacoes}
+                              onChange={handleInputChange}
                               placeholder="Observações adicionais..."
                               rows={2}
                               className="form-control"
@@ -843,7 +837,7 @@ const ParkingControlApp = () => {
                           </div>
                         </div>
                         
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '2.5rem', marginTop: '2.5rem' }}>
+                        <div className="flex justify-center gap-10 mt-10">
                           <button
                             type="button"
                             onClick={handleSaveEdit}
@@ -854,12 +848,6 @@ const ParkingControlApp = () => {
                               fontSize: '1.2rem',
                               fontWeight: 'bold',
                               boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleSaveEdit();
-                              }
                             }}
                           >
                             Salvar Alterações
@@ -933,7 +921,7 @@ const ParkingControlApp = () => {
                           </button>
                           {vehicle.status === 'DENTRO' && (
                             <button
-                              onClick={() => handleSaida(vehicle.id)}
+                              onClick={() => vehicle.id && handleSaida(vehicle.id)}
                               className="btn"
                             >
                               <LogoutIcon />
