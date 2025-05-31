@@ -13,14 +13,14 @@ import {
   Vehicle,
   addVehicle,
   updateVehicle,
-  subscribeToVehicles,
-  deleteAllVehicles
+  subscribeToVehicles
 } from './services/firebase';
 
 const ParkingControlApp = () => {
   const [activeTab, setActiveTab] = useState('entrada');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showForm, setShowForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<Vehicle, 'id' | 'timestamp'>>({
     placa: '',
@@ -151,6 +151,7 @@ const ParkingControlApp = () => {
         saida: null,
         status: 'DENTRO'
       });
+      setShowForm(false);
     } catch (error) {
       console.error('Erro ao registrar entrada:', error);
       alert('Erro ao registrar entrada do veículo');
@@ -209,7 +210,6 @@ const ParkingControlApp = () => {
 
   const handleCancelEdit = () => {
     setEditingVehicle(null);
-    // Limpa o formulário ao cancelar
     setFormData({
       placa: '',
       modelo: '',
@@ -221,6 +221,19 @@ const ParkingControlApp = () => {
       saida: null,
       status: 'DENTRO'
     });
+  };
+
+  // Função para filtrar veículos baseado na busca e aba ativa
+  const filterVehicles = (vehicle: Vehicle): boolean => {
+    const matchesSearch = 
+      vehicle.telefone.includes(searchTerm.toUpperCase()) ||  // TAG é verificada primeiro
+      vehicle.placa.includes(searchTerm.toUpperCase()) ||
+      vehicle.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      vehicle.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (activeTab === 'dentro') return vehicle.status === 'DENTRO' && matchesSearch;
+    if (activeTab === 'historico') return vehicle.status === 'SAIU' && matchesSearch;
+    return matchesSearch;
   };
 
   // Relatório Functions
@@ -332,18 +345,6 @@ const ParkingControlApp = () => {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-  };
-
-  const filterVehicles = (vehicle: Vehicle): boolean => {
-    const matchesSearch = 
-      vehicle.telefone.includes(searchTerm.toUpperCase()) ||  // TAG é verificada primeiro
-      vehicle.placa.includes(searchTerm.toUpperCase()) ||
-      vehicle.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vehicle.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (activeTab === 'dentro') return vehicle.status === 'DENTRO' && matchesSearch;
-    if (activeTab === 'historico') return vehicle.status === 'SAIU' && matchesSearch;
-    return matchesSearch;
   };
 
   const vehiclesDentro = vehicles.filter(v => v.status === 'DENTRO').length;
@@ -546,6 +547,20 @@ const ParkingControlApp = () => {
                     >
                       Confirmar Entrada
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowForm(false)}
+                      className="btn btn-secondary"
+                      style={{ 
+                        minWidth: '220px', 
+                        padding: '1rem 2rem',
+                        fontSize: '1.2rem',
+                        fontWeight: 'bold',
+                        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+                      }}
+                    >
+                      Cancelar
+                    </button>
                   </div>
                 </div>
             </div>
@@ -691,15 +706,9 @@ const ParkingControlApp = () => {
             <div className="mt-8">
               <h3 className="form-title mb-4">Ações Avançadas</h3>
               <button
-                onClick={async () => {
+                onClick={() => {
                   if (window.confirm('Tem certeza que deseja apagar todo o histórico? Esta ação não pode ser desfeita.')) {
-                    try {
-                      await deleteAllVehicles();
-                      setVehicles([]); // Mantemos isso para atualização imediata da UI
-                    } catch (error) {
-                      console.error('Erro ao apagar histórico:', error);
-                      alert('Erro ao apagar o histórico. Por favor, tente novamente.');
-                    }
+                    setVehicles([]);
                   }
                 }}
                 className="btn btn-secondary"

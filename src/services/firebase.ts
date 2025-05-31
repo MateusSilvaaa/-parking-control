@@ -9,7 +9,8 @@ import {
   onSnapshot,
   where,
   Timestamp,
-  getDocs
+  getDocs,
+  deleteDoc
 } from 'firebase/firestore';
 
 // Interface para o veículo
@@ -85,6 +86,18 @@ export const getVehiclesByDate = async (startDate: Date, endDate: Date) => {
     })) as Vehicle[];
   } catch (error) {
     console.error('Erro ao buscar veículos por data:', error);
+    throw error;
+  }
+};
+
+// Deletar todos os veículos
+export const deleteAllVehicles = async () => {
+  try {
+    const snapshot = await getDocs(vehiclesRef);
+    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error('Erro ao deletar todos os veículos:', error);
     throw error;
   }
 }; 
