@@ -1,0 +1,962 @@
+import React, { useState, useEffect, ChangeEvent } from 'react';
+import EditIcon from '@mui/icons-material/Edit';
+import LogoutIcon from '@mui/icons-material/Logout';
+import AddIcon from '@mui/icons-material/Add';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import DescriptionIcon from '@mui/icons-material/Description';
+import GetAppIcon from '@mui/icons-material/GetApp';
+import CloseIcon from '@mui/icons-material/Close';
+import SearchIcon from '@mui/icons-material/Search';
+import './theme.css';
+
+import { 
+  Vehicle,
+  addVehicle,
+  updateVehicle,
+  subscribeToVehicles,
+  deleteAllVehicles
+} from './services/firebase';
+
+const ParkingControlApp = () => {
+  const [activeTab, setActiveTab] = useState('entrada');
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Omit<Vehicle, 'id' | 'timestamp'>>({
+    placa: '',
+    modelo: '',
+    cor: '',
+    responsavel: '',
+    telefone: '',
+    observacoes: '',
+    entrada: '',
+    saida: null,
+    status: 'DENTRO'
+  });
+  const [reportType, setReportType] = useState('hoje');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const getNextTagNumber = (): string => {
+    // Coleta todos os números de TAG existentes
+    const existingTags = vehicles
+      .map(v => v.telefone) // Usamos o campo telefone para armazenar a TAG
+      .filter(tag => /^\d+$/.test(tag)) // Filtra apenas tags que são números
+      .map(tag => parseInt(tag, 10)) // Converte para número
+      .sort((a, b) => a - b); // Ordena numericamente
+    
+    // Encontra o próximo número disponível
+    let nextNumber = 1;
+    for (const tag of existingTags) {
+      if (tag === nextNumber) {
+        nextNumber++;
+      } else if (tag > nextNumber) {
+        break; // Encontramos um "buraco" na sequência
+      }
+    }
+    
+    // Formata o número com zeros à esquerda (ex: 01, 02, etc.)
+    return nextNumber.toString().padStart(2, '0');
+  };
+
+  // Load saved data on component mount
+  useEffect(() => {
+    const savedVehicles = JSON.parse(localStorage.getItem('vehicles') || '[]') as Vehicle[];
+    setVehicles(savedVehicles);
+  }, []);
+
+  // Save to localStorage whenever vehicles change
+  useEffect(() => {
+    localStorage.setItem('vehicles', JSON.stringify(vehicles));
+  }, [vehicles]);
+
+  // Inscrever-se para atualizações em tempo real
+  useEffect(() => {
+    const unsubscribe = subscribeToVehicles((updatedVehicles) => {
+      setVehicles(updatedVehicles);
+    });
+
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, []);
+
+
+  // Atualiza o formulário quando um veículo é selecionado para edição
+  useEffect(() => {
+    if (editingVehicle) {
+      const vehicle = vehicles.find(v => v.id === editingVehicle);
+      if (vehicle) {
+        setFormData({
+          placa: vehicle.placa,
+          modelo: vehicle.modelo,
+          cor: vehicle.cor,
+          responsavel: vehicle.responsavel,
+          telefone: vehicle.telefone,
+          observacoes: vehicle.observacoes,
+          entrada: vehicle.entrada,
+          saida: vehicle.saida,
+          status: vehicle.status
+        });
+      }
+    }
+  }, [editingVehicle, vehicles]);
+
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value.toUpperCase()
+    }));
+  };
+  
+  // Função para lidar com a tecla Enter nos campos
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Evita o comportamento padrão do Enter
+      
+      // Usa tabIndex para mover para o próximo campo
+      const inputs = document.querySelectorAll('input, textarea');
+      const currentIndex = Array.from(inputs).indexOf(e.currentTarget);
+      
+      if (currentIndex < inputs.length - 1) {
+        // Se não for o último campo, move para o próximo campo
+        (inputs[currentIndex + 1] as HTMLElement).focus();
+      } else {
+        // Se for o último campo (observações), foca no botão Confirmar Entrada
+        const confirmButton = document.querySelector('.confirm-button') as HTMLElement;
+        if (confirmButton) {
+          confirmButton.focus();
+        }
+      }
+    }
+  };
+
+  const handleEntrada = async () => {
+    if (!formData.placa.trim()) return;
+
+    try {
+      await addVehicle({
+        ...formData,
+        entrada: new Date().toLocaleString('pt-BR'),
+      });
+
+      setFormData({
+        placa: '',
+        modelo: '',
+        cor: '',
+        responsavel: '',
+        telefone: '',
+        observacoes: '',
+        entrada: '',
+        saida: null,
+        status: 'DENTRO'
+      });
+    } catch (error) {
+      console.error('Erro ao registrar entrada:', error);
+      alert('Erro ao registrar entrada do veículo');
+    }
+  };
+
+  const handleSaida = async (vehicleId: string | undefined) => {
+    if (!vehicleId) return;
+    
+    try {
+      await updateVehicle(vehicleId, {
+        saida: new Date().toLocaleString('pt-BR'),
+        status: 'SAIU'
+      });
+    } catch (error) {
+      console.error('Erro ao registrar saída:', error);
+      alert('Erro ao registrar saída do veículo');
+    }
+  };
+
+  const handleEdit = (vehicle: Vehicle) => {
+    if (vehicle.id) {
+      setEditingVehicle(vehicle.id);
+    }
+  };
+
+
+  const handleSaveEdit = async () => {
+    if (!formData.placa.trim() || !editingVehicle) return;
+    
+    try {
+      // Atualiza no Firebase
+      await updateVehicle(editingVehicle, {
+        ...formData,
+        // Mantém o timestamp original
+        timestamp: vehicles.find(v => v.id === editingVehicle)?.timestamp
+      });
+
+      // Limpa o formulário e sai do modo de edição
+      setFormData({
+        placa: '',
+        modelo: '',
+        cor: '',
+        responsavel: '',
+        telefone: '',
+        observacoes: '',
+        entrada: '',
+        saida: null,
+        status: 'DENTRO'
+      });
+      setEditingVehicle(null);
+    } catch (error) {
+      console.error('Erro ao salvar edição:', error);
+      alert('Erro ao salvar as alterações do veículo');
+    }
+
+  const handleSaveEdit = () => {
+    if (!formData.placa.trim() || !editingVehicle) return;
+    
+    setVehicles(prev =>
+      prev.map(vehicle =>
+        vehicle.id === editingVehicle
+          ? { ...vehicle, ...formData }
+          : vehicle
+      )
+    );
+    setEditingVehicle(null);
+
+  };
+
+  const handleCancelEdit = () => {
+    setEditingVehicle(null);
+
+    // Limpa o formulário ao cancelar
+    setFormData({
+      placa: '',
+      modelo: '',
+      cor: '',
+      responsavel: '',
+      telefone: '',
+      observacoes: '',
+      entrada: '',
+      saida: null,
+      status: 'DENTRO'
+    });
+
+  };
+
+  // Relatório Functions
+  const getReportData = (): Vehicle[] => {
+    const today = new Date().toDateString();
+    
+    switch (reportType) {
+      case 'hoje':
+        return vehicles.filter(v => {
+          // Extrai apenas a data (sem a hora) da string de entrada
+          const entryDate = new Date(v.entrada.split(' ')[0].split('/').reverse().join('-'));
+          return entryDate.toDateString() === today;
+        });
+      case 'periodo':
+        if (!reportStartDate || !reportEndDate) return [];
+        const start = new Date(reportStartDate);
+        const end = new Date(reportEndDate);
+        end.setHours(23, 59, 59, 999); // Include the end date fully
+        return vehicles.filter(v => {
+          const entryDate = new Date(v.entrada);
+          return entryDate >= start && entryDate <= end;
+        });
+      case 'todos':
+        return vehicles;
+      case 'dentro':
+        return vehicles.filter(v => v.status === 'DENTRO');
+      default:
+        return vehicles;
+    }
+  };
+
+  const calculateDuration = (entrada: string, saida: string | null): string => {
+    if (!saida) return 'Em andamento';
+    const start = new Date(entrada);
+    const end = new Date(saida);
+    const diff = end.getTime() - start.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}min`;
+  };
+
+  const generateExcelReport = () => {
+    const data = getReportData();
+    const headers = ['Placa', 'Modelo', 'Cor', 'Responsável', 'TAG', 'Entrada', 'Saída', 'Duração', 'Status', 'Observações'];
+    
+    // Cria uma tabela HTML que o Excel pode abrir diretamente
+    let htmlContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Relatório de Estacionamento</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr>
+              ${headers.map(header => `<th>${header}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    // Adiciona os dados
+    data.forEach(v => {
+      htmlContent += `
+        <tr>
+          <td>${v.placa}</td>
+          <td>${v.modelo || ''}</td>
+          <td>${v.cor || ''}</td>
+          <td>${v.responsavel || ''}</td>
+          <td>${v.telefone || ''}</td>
+          <td>${v.entrada}</td>
+          <td>${v.saida || ''}</td>
+          <td>${calculateDuration(v.entrada, v.saida)}</td>
+          <td>${v.status}</td>
+          <td>${v.observacoes || ''}</td>
+        </tr>
+      `;
+    });
+    
+    // Fecha a tabela e o HTML
+    htmlContent += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+    
+    // Cria um Blob com o conteúdo HTML
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `relatorio_estacionamento_${new Date().toISOString().split('T')[0]}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const filterVehicles = (vehicle: Vehicle): boolean => {
+    const matchesSearch = 
+      vehicle.telefone.includes(searchTerm.toUpperCase()) ||  // TAG é verificada primeiro
+      vehicle.placa.includes(searchTerm.toUpperCase()) ||
+      vehicle.modelo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      vehicle.responsavel.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (activeTab === 'dentro') return vehicle.status === 'DENTRO' && matchesSearch;
+    if (activeTab === 'historico') return vehicle.status === 'SAIU' && matchesSearch;
+    return matchesSearch;
+  };
+
+  const vehiclesDentro = vehicles.filter(v => v.status === 'DENTRO').length;
+  const vehiclesSaiu = vehicles.filter(v => v.status === 'SAIU').length;
+  
+  // Função para calcular o total de veículos de hoje, independente do status
+  const getTotalVehiclesToday = (): number => {
+    const today = new Date().toDateString();
+    return vehicles.filter(vehicle => {
+      try {
+        // Formato brasileiro: DD/MM/AAAA HH:MM:SS
+        const dateParts = vehicle.entrada.split(' ')[0].split('/');
+        if (dateParts.length !== 3) return false;
+        
+        const day = parseInt(dateParts[0]);
+        const month = parseInt(dateParts[1]) - 1; // Meses em JS são 0-11
+        const year = parseInt(dateParts[2]);
+        
+        const entryDate = new Date(year, month, day);
+        return entryDate.toDateString() === today;
+      } catch (e) {
+        return false; // Em caso de erro no parsing da data
+      }
+    }).length;
+  };
+  
+  const totalVehiclesToday = getTotalVehiclesToday();
+  const reportData = getReportData();
+
+  return (
+    <div className="app-container">
+      <header className="header">
+        <div className="logo-container">
+          <img src="/images/rincon-logo.png" alt="Rincon Security" className="logo" />
+          <h1 className="app-title">Controle de Estacionamento</h1>
+        </div>
+        <div className="status-indicators">
+          <span className="status-inside">Veículos dentro: {vehiclesDentro}</span>
+          <span className="status-exit">Veículos que saíram: {vehiclesSaiu}</span>
+          <span className="status-left">Total hoje: {totalVehiclesToday}</span>
+        </div>
+      </header>
+
+      <div className="nav-tabs">
+        <div style={{ 
+          display: 'flex', 
+          width: '100%', 
+          borderBottom: '2px solid #d4af37',
+          backgroundColor: '#1a1a1a'
+        }}>
+          <button
+            onClick={() => setActiveTab('entrada')}
+            className={`nav-tab ${activeTab === 'entrada' ? 'active' : ''}`}
+            style={{ border: 'none' }}
+          >
+            <AddIcon /> Entrada
+          </button>
+          <button
+            onClick={() => setActiveTab('dentro')}
+            className={`nav-tab ${activeTab === 'dentro' ? 'active' : ''}`}
+            style={{ border: 'none' }}
+          >
+            <DirectionsCarIcon /> Dentro ({vehiclesDentro})
+          </button>
+          <button
+            onClick={() => setActiveTab('historico')}
+            className={`nav-tab ${activeTab === 'historico' ? 'active' : ''}`}
+            style={{ border: 'none' }}
+          >
+            <LogoutIcon /> Histórico
+          </button>
+          <button
+            onClick={() => setActiveTab('relatorios')}
+            className={`nav-tab ${activeTab === 'relatorios' ? 'active' : ''}`}
+            style={{ border: 'none' }}
+          >
+            <DescriptionIcon /> Relatórios
+          </button>
+        </div>
+      </div>
+
+      <div className="content">
+        {/* Entrada Tab */}
+        {activeTab === 'entrada' && (
+              <div className="fade-in">
+                <div className="form-container">
+                  <h2 className="form-title">Nova Entrada</h2>
+                  
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label className="form-label">
+                        Placa do Veículo *
+                      </label>
+                      <input
+                        type="text"
+                        name="placa"
+                        value={formData.placa}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="ABC-1234"
+                        className="form-control text-lg font-mono"
+                        required
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">
+                        TAG
+                      </label>
+                      <input
+                        type="text"
+                        name="telefone"
+                        value={formData.telefone}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ex: 001"
+                        className="form-control"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">
+                        Modelo do Veículo
+                      </label>
+                      <input
+                        type="text"
+                        name="modelo"
+                        value={formData.modelo}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ex: Honda Civic"
+                        className="form-control"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">
+                        Cor
+                      </label>
+                      <input
+                        type="text"
+                        name="cor"
+                        value={formData.cor}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ex: Branco"
+                        className="form-control"
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label className="form-label">
+                        Responsável
+                      </label>
+                      <input
+                        type="text"
+                        name="responsavel"
+                        value={formData.responsavel}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Nome do responsável"
+                        className="form-control"
+                      />
+                    </div>
+                    
+                    <div className="form-group md:col-span-2">
+                      <label className="form-label">
+                        Observações
+                      </label>
+                      <textarea
+                        name="observacoes"
+                        value={formData.observacoes}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Observações adicionais..."
+                        rows={2}
+                        className="form-control"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '2.5rem', marginTop: '2.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleEntrada}
+                      className="btn confirm-button"
+                      style={{ 
+                        minWidth: '220px', 
+                        padding: '1rem 2rem',
+                        fontSize: '1.2rem',
+                        fontWeight: 'bold',
+                        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleEntrada();
+                        }
+                      }}
+                    >
+                      Confirmar Entrada
+                    </button>
+                  </div>
+                </div>
+            </div>
+        )}
+
+        {/* Relatórios Tab */}
+        {activeTab === 'relatorios' && (
+          <div className="w-full max-w-800">
+            <div className="report-controls">
+              <h2 className="form-title">Gerar Relatório</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="form-label">Tipo de Relatório</label>
+                  <div className="report-type-selector">
+                    <button 
+                      onClick={() => setReportType('hoje')} 
+                      className={`report-type-option ${reportType === 'hoje' ? 'active' : ''}`}
+                    >
+                      Hoje
+                    </button>
+                    <button 
+                      onClick={() => setReportType('periodo')} 
+                      className={`report-type-option ${reportType === 'periodo' ? 'active' : ''}`}
+                    >
+                      Período Específico
+                    </button>
+                    <button 
+                      onClick={() => setReportType('todos')} 
+                      className={`report-type-option ${reportType === 'todos' ? 'active' : ''}`}
+                    >
+                      Todos os Registros
+                    </button>
+                    <button 
+                      onClick={() => setReportType('dentro')} 
+                      className={`report-type-option ${reportType === 'dentro' ? 'active' : ''}`}
+                    >
+                      Veículos Dentro
+                    </button>
+                  </div>
+                </div>
+
+                {reportType === 'periodo' && (
+                  <div className="date-range">
+                    <div className="date-picker">
+                      <label className="form-label">Data Inicial</label>
+                      <input 
+                        type="date" 
+                        value={reportStartDate}
+                        onChange={(e) => setReportStartDate(e.target.value)}
+                        className="form-control"
+                      />
+                    </div>
+                    <div className="date-picker">
+                      <label className="form-label">Data Final</label>
+                      <input 
+                        type="date" 
+                        value={reportEndDate}
+                        onChange={(e) => setReportEndDate(e.target.value)}
+                        className="form-control"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4">
+                  <button
+                    onClick={generateExcelReport}
+                    disabled={reportData.length === 0}
+                    className="btn"
+                  >
+                    <GetAppIcon />
+                    Baixar Excel/CSV ({reportData.length} registros)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-container mt-4">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="form-title">
+                  Preview do Relatório - {reportData.length} registros
+                </h3>
+                {reportType === 'hoje' && <p className="text-sm">Veículos de hoje</p>}
+                {reportType === 'periodo' && reportStartDate && reportEndDate && (
+                  <p className="text-sm">
+                    Período: {new Date(reportStartDate).toLocaleDateString('pt-BR')} até {new Date(reportEndDate).toLocaleDateString('pt-BR')}
+                  </p>
+                )}
+                {reportType === 'dentro' && <p className="text-sm">Veículos atualmente no estacionamento</p>}
+                {reportType === 'todos' && <p className="text-sm">Histórico completo</p>}
+              </div>
+              
+              <div className="p-4">
+                {reportData.length === 0 ? (
+                  <div className="empty-state">
+                    <DescriptionIcon className="empty-state-icon" />
+                    Nenhum registro encontrado para os critérios selecionados
+                  </div>
+                ) : (
+                  <div className="vehicle-list max-h-96 overflow-y-auto">
+                    {reportData.map((vehicle) => (
+                      <div key={vehicle.id} className="vehicle-card">
+                        <div className="vehicle-card-header">
+                          <div className="flex items-center">
+                            <span className="vehicle-plate">
+                              {vehicle.placa}
+                            </span>
+                            <span className={`vehicle-status ${
+                              vehicle.status === 'DENTRO' 
+                                ? 'status-inside' 
+                                : 'status-left'
+                            }`}>
+                              {vehicle.status}
+                            </span>
+                          </div>
+                          <div className="text-sm">
+                            Duração: {calculateDuration(vehicle.entrada, vehicle.saida)}
+                          </div>
+                        </div>
+                        
+                        <div className="vehicle-details">
+                          {vehicle.modelo && <div><strong>Modelo:</strong> {vehicle.modelo}</div>}
+                          {vehicle.cor && <div><strong>Cor:</strong> {vehicle.cor}</div>}
+                          {vehicle.responsavel && <div><strong>Responsável:</strong> {vehicle.responsavel}</div>}
+                          {vehicle.telefone && <div><strong>TAG:</strong> {vehicle.telefone}</div>}
+                          <div><strong>Entrada:</strong> {vehicle.entrada}</div>
+                          {vehicle.saida && <div><strong>Saída:</strong> {vehicle.saida}</div>}
+                        </div>
+                        
+                        {vehicle.observacoes && (
+                          <div className="mt-2 text-sm">
+                            <strong>Obs:</strong> {vehicle.observacoes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-8">
+              <h3 className="form-title mb-4">Ações Avançadas</h3>
+              <button
+                onClick={async () => {
+                  if (window.confirm('Tem certeza que deseja apagar todo o histórico? Esta ação não pode ser desfeita.')) {
+                    try {
+                      await deleteAllVehicles();
+                      setVehicles([]); // Mantemos isso para atualização imediata da UI
+                    } catch (error) {
+                      console.error('Erro ao apagar histórico:', error);
+                      alert('Erro ao apagar o histórico. Por favor, tente novamente.');
+                    }
+                  }
+                }}
+                className="btn btn-secondary"
+              >
+                <CloseIcon />
+                Apagar Todo o Histórico
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Dentro e Histórico Tabs */}
+        {(activeTab === 'dentro' || activeTab === 'historico') && (
+          <div className="w-full max-w-800">
+            {/* Search Bar */}
+            <div className="search-container">
+              <SearchIcon className="search-icon" />
+              <input
+                type="text"
+                placeholder="Buscar por placa, modelo ou responsável..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="search-input"
+              />
+            </div>
+
+            {/* Vehicle List */}
+            <div className="vehicle-list">
+              {vehicles.filter(filterVehicles).length === 0 ? (
+                <div className="empty-state">
+                  <DirectionsCarIcon className="empty-state-icon" />
+                  {activeTab === 'dentro' ? 'Nenhum veículo no estacionamento' : 'Nenhum registro encontrado'}
+                </div>
+              ) : (
+                vehicles
+                  .filter(filterVehicles)
+                  .map((vehicle: Vehicle) => (
+                    <div key={vehicle.id} className="vehicle-card fade-in">
+                      {editingVehicle === vehicle.id ? (
+                        // Modo de Edição
+                        <div className="form-container edit-form">
+                          <h2 className="form-title">Editando Veículo</h2>
+                          
+                          <div className="form-grid">
+                            <div className="form-group">
+                              <label className="form-label">
+                                Placa do Veículo *
+                              </label>
+                              <input
+                                type="text"
+                                name="placa"
+                                value={formData.placa}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="ABC-1234"
+                                className="form-control text-lg font-mono"
+                                required
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                TAG
+                              </label>
+                              <input
+                                type="text"
+                                name="telefone"
+                                value={formData.telefone}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Ex: 001"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Modelo do Veículo
+                              </label>
+                              <input
+                                type="text"
+                                name="modelo"
+                                value={formData.modelo}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Ex: Honda Civic"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Cor
+                              </label>
+                              <input
+                                type="text"
+                                name="cor"
+                                value={formData.cor}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Ex: Branco"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Responsável
+                              </label>
+                              <input
+                                type="text"
+                                name="responsavel"
+                                value={formData.responsavel}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Nome do responsável"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group md:col-span-2">
+                              <label className="form-label">
+                                Observações
+                              </label>
+                              <textarea
+                                name="observacoes"
+                                value={formData.observacoes}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Observações adicionais..."
+                                rows={2}
+                                className="form-control"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-center gap-10 mt-10">
+                            <button
+                              type="button"
+                              onClick={handleSaveEdit}
+                              className="btn save-button"
+                              style={{ 
+                                minWidth: '220px', 
+                                padding: '1rem 2rem',
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+                              }}
+                            >
+                              Salvar Alterações
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="btn btn-secondary"
+                              style={{ 
+                                minWidth: '220px', 
+                                padding: '1rem 2rem',
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        // Modo de Visualização
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="vehicle-card-header">
+                              <span className="vehicle-plate">
+                                {vehicle.placa}
+                              </span>
+                              <span className={`vehicle-status ${
+                                vehicle.status === 'DENTRO' 
+                                  ? 'status-inside' 
+                                  : 'status-left'
+                              }`}>
+                                {vehicle.status}
+                              </span>
+                            </div>
+                            
+                            <div className="vehicle-details">
+                              {vehicle.modelo && (
+                                <div><strong>Modelo:</strong> {vehicle.modelo}</div>
+                              )}
+                              {vehicle.cor && (
+                                <div><strong>Cor:</strong> {vehicle.cor}</div>
+                              )}
+                              {vehicle.responsavel && (
+                                <div><strong>Responsável:</strong> {vehicle.responsavel}</div>
+                              )}
+                              {vehicle.telefone && (
+                                <div><strong>TAG:</strong> {vehicle.telefone}</div>
+                              )}
+                              <div><strong>Entrada:</strong> {vehicle.entrada}</div>
+                              {vehicle.saida && (
+                                <div><strong>Saída:</strong> {vehicle.saida}</div>
+                              )}
+                            </div>
+                            
+                            {vehicle.observacoes && (
+                              <div className="mt-2 text-sm">
+                                <strong>Obs:</strong> {vehicle.observacoes}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="vehicle-actions">
+                            <button
+                              onClick={() => handleEdit(vehicle)}
+                              className="btn btn-secondary"
+                            >
+                              <EditIcon />
+                              Editar
+                            </button>
+                            {vehicle.status === 'DENTRO' && (
+                              <button
+                                onClick={() => vehicle.id && handleSaida(vehicle.id)}
+                                className="btn"
+                              >
+                                <LogoutIcon />
+                                Saída
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ParkingControlApp;
