@@ -483,3 +483,34 @@ body {
 .flex-col { flex-direction: column; }
 .gap-2 { gap: 0.5rem; }
 .gap-3 { gap: 1rem; }
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 8px;
+}
+
+.offline-indicator,
+.online-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.offline-indicator {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.online-indicator {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.connection-status svg {
+  font-size: 20px;
+}

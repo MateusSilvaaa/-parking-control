@@ -7,6 +7,8 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
+import WifiOffIcon from '@mui/icons-material/WifiOff';
+import CloudDoneIcon from '@mui/icons-material/CloudDone';
 import './theme.css';
 
 import { 
@@ -14,8 +16,14 @@ import {
   addVehicle,
   updateVehicle,
   subscribeToVehicles,
-  deleteAllVehicles
+  deleteAllVehicles,
+  syncPendingActions
 } from './services/firebase';
+
+import {
+  setupConnectivityListeners,
+  isOnline
+} from './services/offlineStorage';
 
 const ParkingControlApp = () => {
   const [activeTab, setActiveTab] = useState('entrada');
@@ -36,6 +44,7 @@ const ParkingControlApp = () => {
   const [reportType, setReportType] = useState('hoje');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+  const [isOffline, setIsOffline] = useState(!isOnline());
   
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getNextTagNumber = (): string => {
@@ -100,6 +109,30 @@ const ParkingControlApp = () => {
       }
     }
   }, [editingVehicle, vehicles]);
+
+  useEffect(() => {
+    // Configura listeners de conectividade
+    const cleanup = setupConnectivityListeners(
+      async () => {
+        setIsOffline(false);
+        // Tenta sincronizar dados pendentes quando voltar online
+        try {
+          await syncPendingActions();
+        } catch (error) {
+          console.error('Erro ao sincronizar dados:', error);
+        }
+      },
+      () => setIsOffline(true)
+    );
+
+    // Inscreve-se para atualizações de veículos
+    const unsubscribe = subscribeToVehicles(setVehicles);
+
+    return () => {
+      cleanup();
+      unsubscribe();
+    };
+  }, []);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -384,6 +417,19 @@ const ParkingControlApp = () => {
           <span className="status-inside">Veículos dentro: {vehiclesDentro}</span>
           <span className="status-exit">Veículos que saíram: {vehiclesSaiu}</span>
           <span className="status-left">Total hoje: {totalVehiclesToday}</span>
+        </div>
+        <div className="connection-status">
+          {isOffline ? (
+            <div className="offline-indicator">
+              <WifiOffIcon />
+              <span>Offline</span>
+            </div>
+          ) : (
+            <div className="online-indicator">
+              <CloudDoneIcon />
+              <span>Online</span>
+            </div>
+          )}
         </div>
       </header>
 

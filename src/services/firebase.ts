@@ -13,6 +13,15 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 
+import {
+  saveVehiclesLocally,
+  loadVehiclesLocally,
+  addPendingAction,
+  getPendingActions,
+  clearPendingActions,
+  isOnline
+} from './offlineStorage';
+
 // Interface para o veículo
 export interface Vehicle {
   id?: string;
@@ -34,6 +43,26 @@ const vehiclesRef = collection(db, 'vehicles');
 // Adicionar novo veículo
 export const addVehicle = async (vehicleData: Omit<Vehicle, 'id' | 'timestamp'>) => {
   try {
+    if (!isOnline()) {
+      const offlineVehicle = {
+        ...vehicleData,
+        id: `offline_${Date.now()}`,
+        timestamp: Timestamp.now()
+      };
+      
+      const vehicles = loadVehiclesLocally();
+      vehicles.push(offlineVehicle);
+      saveVehiclesLocally(vehicles);
+      
+      addPendingAction({
+        type: 'add',
+        data: offlineVehicle,
+        timestamp: Date.now()
+      });
+      
+      return offlineVehicle.id;
+    }
+
     const docRef = await addDoc(vehiclesRef, {
       ...vehicleData,
       timestamp: Timestamp.now()
@@ -48,6 +77,23 @@ export const addVehicle = async (vehicleData: Omit<Vehicle, 'id' | 'timestamp'>)
 // Atualizar veículo
 export const updateVehicle = async (id: string, data: Partial<Vehicle>) => {
   try {
+    if (!isOnline()) {
+      const vehicles = loadVehiclesLocally();
+      const index = vehicles.findIndex(v => v.id === id);
+      
+      if (index !== -1) {
+        vehicles[index] = { ...vehicles[index], ...data };
+        saveVehiclesLocally(vehicles);
+        
+        addPendingAction({
+          type: 'update',
+          data: vehicles[index],
+          timestamp: Date.now()
+        });
+      }
+      return;
+    }
+
     const vehicleRef = doc(db, 'vehicles', id);
     await updateDoc(vehicleRef, data);
   } catch (error) {
@@ -56,17 +102,32 @@ export const updateVehicle = async (id: string, data: Partial<Vehicle>) => {
   }
 };
 
-// Observar veículos em tempo real
+// Observar veículos em tempo real com suporte offline
 export const subscribeToVehicles = (callback: (vehicles: Vehicle[]) => void) => {
   const q = query(vehiclesRef, orderBy('timestamp', 'desc'));
   
-  return onSnapshot(q, (snapshot) => {
-    const vehicles = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Vehicle[];
-    callback(vehicles);
-  });
+  // Primeiro, carrega dados do localStorage
+  const offlineVehicles = loadVehiclesLocally();
+  if (offlineVehicles.length > 0) {
+    callback(offlineVehicles);
+  }
+  
+  // Se estiver online, inscreve-se para atualizações em tempo real
+  if (isOnline()) {
+    return onSnapshot(q, (snapshot) => {
+      const vehicles = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Vehicle[];
+      
+      // Salva os dados mais recentes localmente
+      saveVehiclesLocally(vehicles);
+      callback(vehicles);
+    });
+  }
+  
+  // Se estiver offline, retorna uma função vazia
+  return () => {};
 };
 
 // Buscar veículos por data
@@ -100,4 +161,37 @@ export const deleteAllVehicles = async () => {
     console.error('Erro ao deletar todos os veículos:', error);
     throw error;
   }
+};
+
+// Sincronizar dados pendentes quando voltar online
+export const syncPendingActions = async () => {
+  if (!isOnline()) return;
+
+  const pendingActions = getPendingActions();
+  
+  for (const action of pendingActions) {
+    try {
+      switch (action.type) {
+        case 'add':
+          const { id, ...vehicleData } = action.data;
+          await addDoc(vehiclesRef, {
+            ...vehicleData,
+            timestamp: Timestamp.now()
+          });
+          break;
+          
+        case 'update':
+          if (action.data.id && !action.data.id.startsWith('offline_')) {
+            const vehicleRef = doc(db, 'vehicles', action.data.id);
+            const { id, ...updateData } = action.data;
+            await updateDoc(vehicleRef, updateData);
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar ação:', error);
+    }
+  }
+  
+  clearPendingActions();
 }; 
