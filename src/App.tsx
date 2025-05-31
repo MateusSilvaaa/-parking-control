@@ -20,7 +20,6 @@ const ParkingControlApp = () => {
   const [activeTab, setActiveTab] = useState('entrada');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showForm, setShowForm] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<Vehicle, 'id' | 'timestamp'>>({
     placa: '',
@@ -37,7 +36,7 @@ const ParkingControlApp = () => {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
   
-  // Função para gerar o próximo número de TAG disponível
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getNextTagNumber = (): string => {
     // Coleta todos os números de TAG existentes
     const existingTags = vehicles
@@ -151,7 +150,6 @@ const ParkingControlApp = () => {
         saida: null,
         status: 'DENTRO'
       });
-      setShowForm(false);
     } catch (error) {
       console.error('Erro ao registrar entrada:', error);
       alert('Erro ao registrar entrada do veículo');
@@ -335,7 +333,7 @@ const ParkingControlApp = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const filteredVehicles = vehicles.filter(vehicle => {
+  const filterVehicles = (vehicle: Vehicle): boolean => {
     const matchesSearch = 
       vehicle.telefone.includes(searchTerm.toUpperCase()) ||  // TAG é verificada primeiro
       vehicle.placa.includes(searchTerm.toUpperCase()) ||
@@ -345,7 +343,7 @@ const ParkingControlApp = () => {
     if (activeTab === 'dentro') return vehicle.status === 'DENTRO' && matchesSearch;
     if (activeTab === 'historico') return vehicle.status === 'SAIU' && matchesSearch;
     return matchesSearch;
-  });
+  };
 
   const vehiclesDentro = vehicles.filter(v => v.status === 'DENTRO').length;
   const vehiclesSaiu = vehicles.filter(v => v.status === 'SAIU').length;
@@ -547,20 +545,6 @@ const ParkingControlApp = () => {
                     >
                       Confirmar Entrada
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowForm(false)}
-                      className="btn btn-secondary"
-                      style={{ 
-                        minWidth: '220px', 
-                        padding: '1rem 2rem',
-                        fontSize: '1.2rem',
-                        fontWeight: 'bold',
-                        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
-                      }}
-                    >
-                      Cancelar
-                    </button>
                   </div>
                 </div>
             </div>
@@ -737,202 +721,204 @@ const ParkingControlApp = () => {
 
             {/* Vehicle List */}
             <div className="vehicle-list">
-              {filteredVehicles.length === 0 ? (
+              {vehicles.filter(filterVehicles).length === 0 ? (
                 <div className="empty-state">
                   <DirectionsCarIcon className="empty-state-icon" />
                   {activeTab === 'dentro' ? 'Nenhum veículo no estacionamento' : 'Nenhum registro encontrado'}
                 </div>
               ) : (
-                filteredVehicles.map((vehicle) => (
-                  <div key={vehicle.id} className="vehicle-card fade-in">
-                    {editingVehicle === vehicle.id ? (
-                      // Modo de Edição
-                      <div className="form-container edit-form">
-                        <h2 className="form-title">Editando Veículo</h2>
-                        
-                        <div className="form-grid">
-                          <div className="form-group">
-                            <label className="form-label">
-                              Placa do Veículo *
-                            </label>
-                            <input
-                              type="text"
-                              name="placa"
-                              value={formData.placa}
-                              onChange={handleInputChange}
-                              placeholder="ABC-1234"
-                              className="form-control text-lg font-mono"
-                              required
-                            />
-                          </div>
+                vehicles
+                  .filter(filterVehicles)
+                  .map((vehicle: Vehicle) => (
+                    <div key={vehicle.id} className="vehicle-card fade-in">
+                      {editingVehicle === vehicle.id ? (
+                        // Modo de Edição
+                        <div className="form-container edit-form">
+                          <h2 className="form-title">Editando Veículo</h2>
                           
-                          <div className="form-group">
-                            <label className="form-label">
-                              TAG
-                            </label>
-                            <input
-                              type="text"
-                              name="telefone"
-                              value={formData.telefone}
-                              onChange={handleInputChange}
-                              placeholder="Ex: 001"
-                              className="form-control"
-                            />
-                          </div>
-                          
-                          <div className="form-group">
-                            <label className="form-label">
-                              Modelo do Veículo
-                            </label>
-                            <input
-                              type="text"
-                              name="modelo"
-                              value={formData.modelo}
-                              onChange={handleInputChange}
-                              placeholder="Ex: Honda Civic"
-                              className="form-control"
-                            />
-                          </div>
-                          
-                          <div className="form-group">
-                            <label className="form-label">
-                              Cor
-                            </label>
-                            <input
-                              type="text"
-                              name="cor"
-                              value={formData.cor}
-                              onChange={handleInputChange}
-                              placeholder="Ex: Branco"
-                              className="form-control"
-                            />
-                          </div>
-                          
-                          <div className="form-group">
-                            <label className="form-label">
-                              Responsável
-                            </label>
-                            <input
-                              type="text"
-                              name="responsavel"
-                              value={formData.responsavel}
-                              onChange={handleInputChange}
-                              placeholder="Nome do responsável"
-                              className="form-control"
-                            />
-                          </div>
-                          
-                          <div className="form-group md:col-span-2">
-                            <label className="form-label">
-                              Observações
-                            </label>
-                            <textarea
-                              name="observacoes"
-                              value={formData.observacoes}
-                              onChange={handleInputChange}
-                              placeholder="Observações adicionais..."
-                              rows={2}
-                              className="form-control"
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-center gap-10 mt-10">
-                          <button
-                            type="button"
-                            onClick={handleSaveEdit}
-                            className="btn save-button"
-                            style={{ 
-                              minWidth: '220px', 
-                              padding: '1rem 2rem',
-                              fontSize: '1.2rem',
-                              fontWeight: 'bold',
-                              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
-                            }}
-                          >
-                            Salvar Alterações
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelEdit}
-                            className="btn btn-secondary"
-                            style={{ 
-                              minWidth: '220px', 
-                              padding: '1rem 2rem',
-                              fontSize: '1.2rem',
-                              fontWeight: 'bold',
-                              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
-                            }}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      // Modo de Visualização
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="vehicle-card-header">
-                            <span className="vehicle-plate">
-                              {vehicle.placa}
-                            </span>
-                            <span className={`vehicle-status ${
-                              vehicle.status === 'DENTRO' 
-                                ? 'status-inside' 
-                                : 'status-left'
-                            }`}>
-                              {vehicle.status}
-                            </span>
-                          </div>
-                          
-                          <div className="vehicle-details">
-                            {vehicle.modelo && (
-                              <div><strong>Modelo:</strong> {vehicle.modelo}</div>
-                            )}
-                            {vehicle.cor && (
-                              <div><strong>Cor:</strong> {vehicle.cor}</div>
-                            )}
-                            {vehicle.responsavel && (
-                              <div><strong>Responsável:</strong> {vehicle.responsavel}</div>
-                            )}
-                            {vehicle.telefone && (
-                              <div><strong>TAG:</strong> {vehicle.telefone}</div>
-                            )}
-                            <div><strong>Entrada:</strong> {vehicle.entrada}</div>
-                            {vehicle.saida && (
-                              <div><strong>Saída:</strong> {vehicle.saida}</div>
-                            )}
-                          </div>
-                          
-                          {vehicle.observacoes && (
-                            <div className="mt-2 text-sm">
-                              <strong>Obs:</strong> {vehicle.observacoes}
+                          <div className="form-grid">
+                            <div className="form-group">
+                              <label className="form-label">
+                                Placa do Veículo *
+                              </label>
+                              <input
+                                type="text"
+                                name="placa"
+                                value={formData.placa}
+                                onChange={handleInputChange}
+                                placeholder="ABC-1234"
+                                className="form-control text-lg font-mono"
+                                required
+                              />
                             </div>
-                          )}
-                        </div>
-                        
-                        <div className="vehicle-actions">
-                          <button
-                            onClick={() => handleEdit(vehicle)}
-                            className="btn btn-secondary"
-                          >
-                            <EditIcon />
-                            Editar
-                          </button>
-                          {vehicle.status === 'DENTRO' && (
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                TAG
+                              </label>
+                              <input
+                                type="text"
+                                name="telefone"
+                                value={formData.telefone}
+                                onChange={handleInputChange}
+                                placeholder="Ex: 001"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Modelo do Veículo
+                              </label>
+                              <input
+                                type="text"
+                                name="modelo"
+                                value={formData.modelo}
+                                onChange={handleInputChange}
+                                placeholder="Ex: Honda Civic"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Cor
+                              </label>
+                              <input
+                                type="text"
+                                name="cor"
+                                value={formData.cor}
+                                onChange={handleInputChange}
+                                placeholder="Ex: Branco"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label className="form-label">
+                                Responsável
+                              </label>
+                              <input
+                                type="text"
+                                name="responsavel"
+                                value={formData.responsavel}
+                                onChange={handleInputChange}
+                                placeholder="Nome do responsável"
+                                className="form-control"
+                              />
+                            </div>
+                            
+                            <div className="form-group md:col-span-2">
+                              <label className="form-label">
+                                Observações
+                              </label>
+                              <textarea
+                                name="observacoes"
+                                value={formData.observacoes}
+                                onChange={handleInputChange}
+                                placeholder="Observações adicionais..."
+                                rows={2}
+                                className="form-control"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-center gap-10 mt-10">
                             <button
-                              onClick={() => vehicle.id && handleSaida(vehicle.id)}
-                              className="btn"
+                              type="button"
+                              onClick={handleSaveEdit}
+                              className="btn save-button"
+                              style={{ 
+                                minWidth: '220px', 
+                                padding: '1rem 2rem',
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+                              }}
                             >
-                              <LogoutIcon />
-                              Saída
+                              Salvar Alterações
                             </button>
-                          )}
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="btn btn-secondary"
+                              style={{ 
+                                minWidth: '220px', 
+                                padding: '1rem 2rem',
+                                fontSize: '1.2rem',
+                                fontWeight: 'bold',
+                                boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))
+                      ) : (
+                        // Modo de Visualização
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="vehicle-card-header">
+                              <span className="vehicle-plate">
+                                {vehicle.placa}
+                              </span>
+                              <span className={`vehicle-status ${
+                                vehicle.status === 'DENTRO' 
+                                  ? 'status-inside' 
+                                  : 'status-left'
+                              }`}>
+                                {vehicle.status}
+                              </span>
+                            </div>
+                            
+                            <div className="vehicle-details">
+                              {vehicle.modelo && (
+                                <div><strong>Modelo:</strong> {vehicle.modelo}</div>
+                              )}
+                              {vehicle.cor && (
+                                <div><strong>Cor:</strong> {vehicle.cor}</div>
+                              )}
+                              {vehicle.responsavel && (
+                                <div><strong>Responsável:</strong> {vehicle.responsavel}</div>
+                              )}
+                              {vehicle.telefone && (
+                                <div><strong>TAG:</strong> {vehicle.telefone}</div>
+                              )}
+                              <div><strong>Entrada:</strong> {vehicle.entrada}</div>
+                              {vehicle.saida && (
+                                <div><strong>Saída:</strong> {vehicle.saida}</div>
+                              )}
+                            </div>
+                            
+                            {vehicle.observacoes && (
+                              <div className="mt-2 text-sm">
+                                <strong>Obs:</strong> {vehicle.observacoes}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="vehicle-actions">
+                            <button
+                              onClick={() => handleEdit(vehicle)}
+                              className="btn btn-secondary"
+                            >
+                              <EditIcon />
+                              Editar
+                            </button>
+                            {vehicle.status === 'DENTRO' && (
+                              <button
+                                onClick={() => vehicle.id && handleSaida(vehicle.id)}
+                                className="btn"
+                              >
+                                <LogoutIcon />
+                                Saída
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
               )}
             </div>
           </div>
