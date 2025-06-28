@@ -69,12 +69,6 @@ const ParkingControlApp = () => {
     return nextNumber.toString().padStart(2, '0');
   };
 
-  // Load saved data on component mount
-  useEffect(() => {
-    const savedVehicles = JSON.parse(localStorage.getItem('vehicles') || '[]') as Vehicle[];
-    setVehicles(savedVehicles);
-  }, []);
-
   // Save to localStorage whenever vehicles change
   useEffect(() => {
     localStorage.setItem('vehicles', JSON.stringify(vehicles));
@@ -165,13 +159,23 @@ const ParkingControlApp = () => {
   };
 
   const handleEntrada = async () => {
-    if (!formData.placa.trim()) return;
-
     try {
-      await addVehicle({
+      const newVehicle = {
         ...formData,
         entrada: new Date().toLocaleString('pt-BR'),
-      });
+      };
+
+      const vehicleId = await addVehicle(newVehicle);
+
+      // Se estiver offline, atualiza o estado local imediatamente
+      if (!isOnline()) {
+        const offlineVehicle = {
+          ...newVehicle,
+          id: vehicleId,
+          timestamp: new Date()
+        };
+        setVehicles(prev => [offlineVehicle, ...prev]);
+      }
 
       setFormData({
         placa: '',
@@ -194,10 +198,21 @@ const ParkingControlApp = () => {
     if (!vehicleId) return;
     
     try {
-      await updateVehicle(vehicleId, {
+      const saidaData = {
         saida: new Date().toLocaleString('pt-BR'),
-        status: 'SAIU'
-      });
+        status: 'SAIU' as const
+      };
+
+      await updateVehicle(vehicleId, saidaData);
+
+      // Se estiver offline, atualiza o estado local imediatamente
+      if (!isOnline()) {
+        setVehicles(prev => prev.map(vehicle => 
+          vehicle.id === vehicleId 
+            ? { ...vehicle, ...saidaData }
+            : vehicle
+        ));
+      }
     } catch (error) {
       console.error('Erro ao registrar saída:', error);
       alert('Erro ao registrar saída do veículo');
@@ -211,15 +226,26 @@ const ParkingControlApp = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!formData.placa.trim() || !editingVehicle) return;
+    if (!editingVehicle) return;
     
     try {
-      // Atualiza no Firebase
-      await updateVehicle(editingVehicle, {
+      const updateData = {
         ...formData,
         // Mantém o timestamp original
         timestamp: vehicles.find(v => v.id === editingVehicle)?.timestamp
-      });
+      };
+
+      // Atualiza no Firebase
+      await updateVehicle(editingVehicle, updateData);
+
+      // Se estiver offline, atualiza o estado local imediatamente
+      if (!isOnline()) {
+        setVehicles(prev => prev.map(vehicle => 
+          vehicle.id === editingVehicle 
+            ? { ...vehicle, ...updateData }
+            : vehicle
+        ));
+      }
 
       // Limpa o formulário e sai do modo de edição
       setFormData({
@@ -481,7 +507,7 @@ const ParkingControlApp = () => {
                   <div className="form-grid">
                     <div className="form-group">
                       <label className="form-label">
-                        Placa do Veículo *
+                        Placa do Veículo
                       </label>
                       <input
                         type="text"
@@ -491,7 +517,6 @@ const ParkingControlApp = () => {
                         onKeyDown={handleKeyDown}
                         placeholder="ABC-1234"
                         className="form-control text-lg font-mono"
-                        required
                       />
                     </div>
                     
@@ -792,7 +817,7 @@ const ParkingControlApp = () => {
                           <div className="form-grid">
                             <div className="form-group">
                               <label className="form-label">
-                                Placa do Veículo *
+                                Placa do Veículo
                               </label>
                               <input
                                 type="text"
@@ -802,7 +827,6 @@ const ParkingControlApp = () => {
                                 onKeyDown={handleKeyDown}
                                 placeholder="ABC-1234"
                                 className="form-control text-lg font-mono"
-                                required
                               />
                             </div>
                             

@@ -104,16 +104,10 @@ export const updateVehicle = async (id: string, data: Partial<Vehicle>) => {
 
 // Observar veículos em tempo real com suporte offline
 export const subscribeToVehicles = (callback: (vehicles: Vehicle[]) => void) => {
-  const q = query(vehiclesRef, orderBy('timestamp', 'desc'));
-  
-  // Primeiro, carrega dados do localStorage
-  const offlineVehicles = loadVehiclesLocally();
-  if (offlineVehicles.length > 0) {
-    callback(offlineVehicles);
-  }
-  
   // Se estiver online, inscreve-se para atualizações em tempo real
   if (isOnline()) {
+    const q = query(vehiclesRef, orderBy('timestamp', 'desc'));
+    
     return onSnapshot(q, (snapshot) => {
       const vehicles = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -123,10 +117,19 @@ export const subscribeToVehicles = (callback: (vehicles: Vehicle[]) => void) => 
       // Salva os dados mais recentes localmente
       saveVehiclesLocally(vehicles);
       callback(vehicles);
+    }, (error) => {
+      console.error('Erro no onSnapshot:', error);
+      // Em caso de erro, carrega dados do localStorage
+      const offlineVehicles = loadVehiclesLocally();
+      callback(offlineVehicles);
     });
   }
   
-  // Se estiver offline, retorna uma função vazia
+  // Se estiver offline, carrega dados do localStorage
+  const offlineVehicles = loadVehiclesLocally();
+  callback(offlineVehicles);
+  
+  // Retorna uma função vazia para cleanup
   return () => {};
 };
 
