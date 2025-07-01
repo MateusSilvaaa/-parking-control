@@ -367,4 +367,41 @@ export const migrateOfflineVehicles = async () => {
   } catch (error) {
     console.error('Erro na migração de veículos offline:', error);
   }
+};
+
+// Deletar veículo individualmente
+export const deleteVehicle = async (id: string) => {
+  try {
+    if (!id || typeof id !== 'string') {
+      throw new Error(`ID inválido: ${id}`);
+    }
+
+    if (!isOnline()) {
+      // Se offline, remove localmente e adiciona ação pendente
+      const vehicles = loadVehiclesLocally();
+      const updatedVehicles = vehicles.filter(v => v.id !== id);
+      saveVehiclesLocally(updatedVehicles);
+      addPendingAction({
+        type: 'delete',
+        data: { id },
+        timestamp: Date.now()
+      });
+      return;
+    }
+
+    // Se for veículo offline, só remove localmente
+    if (id.startsWith('offline_')) {
+      const vehicles = loadVehiclesLocally();
+      const updatedVehicles = vehicles.filter(v => v.id !== id);
+      saveVehiclesLocally(updatedVehicles);
+      return;
+    }
+
+    // Online: deleta do Firebase
+    const vehicleRef = doc(db, 'vehicles', id);
+    await deleteDoc(vehicleRef);
+  } catch (error) {
+    console.error('Erro ao deletar veículo:', error);
+    throw error;
+  }
 }; 

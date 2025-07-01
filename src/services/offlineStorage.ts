@@ -3,11 +3,11 @@ import { Vehicle } from './firebase';
 const STORAGE_KEY = 'offline_vehicles';
 const PENDING_ACTIONS_KEY = 'pending_actions';
 
-interface PendingAction {
-  type: 'add' | 'update' | 'delete';
-  data: Vehicle;
-  timestamp: number;
-}
+// Novo tipo discriminado para PendingAction
+export type PendingAction =
+  | { type: 'add'; data: import('./firebase').Vehicle; timestamp: number }
+  | { type: 'update'; data: import('./firebase').Vehicle; timestamp: number }
+  | { type: 'delete'; data: { id: string }; timestamp: number };
 
 // Salva veículos no localStorage
 export const saveVehiclesLocally = (vehicles: Vehicle[]) => {

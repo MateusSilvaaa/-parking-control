@@ -18,7 +18,8 @@ import {
   subscribeToVehicles,
   deleteAllVehicles,
   syncPendingActions,
-  migrateOfflineVehicles
+  migrateOfflineVehicles,
+  deleteVehicle
 } from './services/firebase';
 
 import {
@@ -46,6 +47,13 @@ const ParkingControlApp = () => {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
   const [isOffline, setIsOffline] = useState(!isOnline());
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' } | null>(null);
+  // Filtros avançados
+  const [reportStatus, setReportStatus] = useState(''); // '' | 'DENTRO' | 'SAIU'
+  const [reportModelo, setReportModelo] = useState('');
+  const [reportResponsavel, setReportResponsavel] = useState('');
+  const [reportTag, setReportTag] = useState('');
+  const [reportPlaca, setReportPlaca] = useState('');
   
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getNextTagNumber = (): string => {
@@ -130,6 +138,14 @@ const ParkingControlApp = () => {
     };
   }, []);
 
+  // Toast timeout
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -190,9 +206,11 @@ const ParkingControlApp = () => {
         saida: null,
         status: 'DENTRO'
       });
+      setToast({ message: 'Veículo registrado com sucesso!', type: 'success' });
     } catch (error) {
       console.error('Erro ao registrar entrada:', error);
       alert('Erro ao registrar entrada do veículo');
+      setToast({ message: 'Erro ao registrar entrada do veículo', type: 'error' });
     }
   };
 
@@ -222,9 +240,11 @@ const ParkingControlApp = () => {
       }
       
       console.log('Saída registrada com sucesso');
+      setToast({ message: 'Saída registrada com sucesso!', type: 'success' });
     } catch (error) {
       console.error('Erro ao registrar saída:', error);
       alert('Erro ao registrar saída do veículo');
+      setToast({ message: 'Erro ao registrar saída do veículo', type: 'error' });
     }
   };
 
@@ -275,9 +295,11 @@ const ParkingControlApp = () => {
       });
       setEditingVehicle(null);
       console.log('Edição salva com sucesso');
+      setToast({ message: 'Alterações salvas com sucesso!', type: 'success' });
     } catch (error) {
       console.error('Erro ao salvar edição:', error);
       alert('Erro ao salvar as alterações do veículo');
+      setToast({ message: 'Erro ao salvar as alterações do veículo', type: 'error' });
     }
   };
 
@@ -300,30 +322,44 @@ const ParkingControlApp = () => {
   // Relatório Functions
   const getReportData = (): Vehicle[] => {
     const today = new Date().toDateString();
-    
+    let filtered = vehicles;
+
+    // Filtro por tipo de relatório (já existente)
     switch (reportType) {
       case 'hoje':
-        return vehicles.filter(v => {
-          // Extrai apenas a data (sem a hora) da string de entrada
+        filtered = filtered.filter(v => {
           const entryDate = new Date(v.entrada.split(' ')[0].split('/').reverse().join('-'));
           return entryDate.toDateString() === today;
         });
+        break;
       case 'periodo':
         if (!reportStartDate || !reportEndDate) return [];
         const start = new Date(reportStartDate);
         const end = new Date(reportEndDate);
-        end.setHours(23, 59, 59, 999); // Include the end date fully
-        return vehicles.filter(v => {
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(v => {
           const entryDate = new Date(v.entrada);
           return entryDate >= start && entryDate <= end;
         });
+        break;
       case 'todos':
-        return vehicles;
+        // nada
+        break;
       case 'dentro':
-        return vehicles.filter(v => v.status === 'DENTRO');
+        filtered = filtered.filter(v => v.status === 'DENTRO');
+        break;
       default:
-        return vehicles;
+        break;
     }
+
+    // Filtros avançados
+    if (reportStatus) filtered = filtered.filter(v => v.status === reportStatus);
+    if (reportModelo) filtered = filtered.filter(v => v.modelo && v.modelo.toLowerCase().includes(reportModelo.toLowerCase()));
+    if (reportResponsavel) filtered = filtered.filter(v => v.responsavel && v.responsavel.toLowerCase().includes(reportResponsavel.toLowerCase()));
+    if (reportTag) filtered = filtered.filter(v => v.telefone && v.telefone.toLowerCase().includes(reportTag.toLowerCase()));
+    if (reportPlaca) filtered = filtered.filter(v => v.placa && v.placa.toLowerCase().includes(reportPlaca.toLowerCase()));
+
+    return filtered;
   };
 
   const calculateDuration = (entrada: string, saida: string | null): string => {
@@ -449,6 +485,28 @@ const ParkingControlApp = () => {
 
   return (
     <div className="app-container">
+      {/* Toast/Alerta visual */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 24,
+            right: 24,
+            zIndex: 9999,
+            background: toast.type === 'error' ? '#dc3545' : '#28a745',
+            color: 'white',
+            padding: '16px 32px',
+            borderRadius: '12px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            fontWeight: 'bold',
+            fontSize: '1.1rem',
+            transition: 'opacity 0.3s',
+            opacity: toast ? 1 : 0
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
       <header className="header">
         <div className="logo-container">
           <img src="/images/rincon-logo.png" alt="Rincon Security" className="logo" />
@@ -697,6 +755,34 @@ const ParkingControlApp = () => {
                   </div>
                 )}
 
+                {/* Filtros avançados */}
+                <div className="form-grid mt-4">
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select className="form-control" value={reportStatus} onChange={e => setReportStatus(e.target.value)}>
+                      <option value="">Todos</option>
+                      <option value="DENTRO">Dentro</option>
+                      <option value="SAIU">Saiu</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Modelo</label>
+                    <input className="form-control" type="text" value={reportModelo} onChange={e => setReportModelo(e.target.value)} placeholder="Ex: Honda Civic" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Responsável</label>
+                    <input className="form-control" type="text" value={reportResponsavel} onChange={e => setReportResponsavel(e.target.value)} placeholder="Nome do responsável" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">TAG</label>
+                    <input className="form-control" type="text" value={reportTag} onChange={e => setReportTag(e.target.value)} placeholder="Ex: 001" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Placa</label>
+                    <input className="form-control" type="text" value={reportPlaca} onChange={e => setReportPlaca(e.target.value)} placeholder="Ex: ABC-1234" />
+                  </div>
+                </div>
+
                 <div className="mt-4">
                   <button
                     onClick={generateExcelReport}
@@ -726,6 +812,27 @@ const ParkingControlApp = () => {
               </div>
               
               <div className="p-4">
+                {/* Totais e estatísticas do relatório */}
+                {reportData.length > 0 && (
+                  <div className="report-stats">
+                    <div className="report-stat-card"><strong>Total filtrado:</strong> {reportData.length}</div>
+                    <div className="report-stat-card"><strong>Dentro:</strong> {reportData.filter(v => v.status === 'DENTRO').length}</div>
+                    <div className="report-stat-card"><strong>Saiu:</strong> {reportData.filter(v => v.status === 'SAIU').length}</div>
+                    <div className="report-stat-card"><strong>Tempo médio de permanência:</strong> {(() => {
+                      const saidos = reportData.filter(v => v.status === 'SAIU' && v.entrada && v.saida);
+                      if (saidos.length === 0) return 'N/A';
+                      const totalMs = saidos.reduce((acc, v) => {
+                        const start = new Date(v.entrada).getTime();
+                        const end = v.saida ? new Date(v.saida).getTime() : 0;
+                        return acc + (end - start);
+                      }, 0);
+                      const avgMs = totalMs / saidos.length;
+                      const hours = Math.floor(avgMs / (1000 * 60 * 60));
+                      const minutes = Math.floor((avgMs % (1000 * 60 * 60)) / (1000 * 60));
+                      return `${hours}h ${minutes}min`;
+                    })()}</div>
+                  </div>
+                )}
                 {reportData.length === 0 ? (
                   <div className="empty-state">
                     <DescriptionIcon className="empty-state-icon" />
@@ -779,6 +886,30 @@ const ParkingControlApp = () => {
               <h3 className="form-title mb-4">Ações Avançadas</h3>
               <button
                 onClick={async () => {
+                  if (window.confirm('Tem certeza que deseja apagar apenas os registros filtrados? Esta ação não pode ser desfeita.')) {
+                    try {
+                      // Deleta apenas os veículos filtrados
+                      for (const v of reportData) {
+                        if (v.id) {
+                          await deleteVehicle(v.id);
+                        }
+                      }
+                      setVehicles(vehicles.filter(v => !reportData.some(r => r.id === v.id)));
+                      setToast({ message: 'Registros filtrados apagados com sucesso!', type: 'success' });
+                    } catch (error) {
+                      console.error('Erro ao apagar registros filtrados:', error);
+                      setToast({ message: 'Erro ao apagar registros filtrados.', type: 'error' });
+                    }
+                  }
+                }}
+                className="btn btn-danger mb-4"
+                disabled={reportData.length === 0}
+              >
+                <CloseIcon />
+                Apagar Registros Filtrados
+              </button>
+              <button
+                onClick={async () => {
                   if (window.confirm('Tem certeza que deseja apagar todo o histórico? Esta ação não pode ser desfeita.')) {
                     try {
                       await deleteAllVehicles();
@@ -823,8 +954,8 @@ const ParkingControlApp = () => {
               ) : (
                 vehicles
                   .filter(filterVehicles)
-                  .map((vehicle: Vehicle) => (
-                    <div key={vehicle.id} className="vehicle-card fade-in">
+                  .map((vehicle: Vehicle, idx: number) => (
+                    <div key={vehicle.id} className={`vehicle-card fade-in${idx % 2 === 1 ? ' zebra' : ''}`}>
                       {editingVehicle === vehicle.id ? (
                         // Modo de Edição
                         <div className="form-container edit-form">
@@ -1008,7 +1139,7 @@ const ParkingControlApp = () => {
                               {vehicle.status === 'DENTRO' && (
                                 <button
                                   onClick={() => vehicle.id && handleSaida(vehicle.id)}
-                                  className="btn"
+                                  className="btn btn-danger"
                                 >
                                   <LogoutIcon />
                                   Saída
