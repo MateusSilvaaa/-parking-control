@@ -17,7 +17,8 @@ import {
   updateVehicle,
   subscribeToVehicles,
   deleteAllVehicles,
-  syncPendingActions
+  syncPendingActions,
+  migrateOfflineVehicles
 } from './services/firebase';
 
 import {
@@ -112,6 +113,7 @@ const ParkingControlApp = () => {
         // Tenta sincronizar dados pendentes quando voltar online
         try {
           await syncPendingActions();
+          await migrateOfflineVehicles();
         } catch (error) {
           console.error('Erro ao sincronizar dados:', error);
         }
@@ -198,21 +200,28 @@ const ParkingControlApp = () => {
     if (!vehicleId) return;
     
     try {
+      console.log('handleSaida - ID do veículo:', vehicleId);
+      
       const saidaData = {
         saida: new Date().toLocaleString('pt-BR'),
         status: 'SAIU' as const
       };
 
+      console.log('Dados de saída:', saidaData);
+
       await updateVehicle(vehicleId, saidaData);
 
-      // Se estiver offline, atualiza o estado local imediatamente
-      if (!isOnline()) {
+      // Se estiver offline ou se o veículo foi criado offline, atualiza o estado local imediatamente
+      if (!isOnline() || vehicleId.startsWith('offline_')) {
+        console.log('Atualizando estado local para saída');
         setVehicles(prev => prev.map(vehicle => 
           vehicle.id === vehicleId 
             ? { ...vehicle, ...saidaData }
             : vehicle
         ));
       }
+      
+      console.log('Saída registrada com sucesso');
     } catch (error) {
       console.error('Erro ao registrar saída:', error);
       alert('Erro ao registrar saída do veículo');
@@ -229,17 +238,22 @@ const ParkingControlApp = () => {
     if (!editingVehicle) return;
     
     try {
+      console.log('handleSaveEdit - ID do veículo:', editingVehicle);
+      
       const updateData = {
         ...formData,
         // Mantém o timestamp original
         timestamp: vehicles.find(v => v.id === editingVehicle)?.timestamp
       };
 
+      console.log('Dados para atualização:', updateData);
+
       // Atualiza no Firebase
       await updateVehicle(editingVehicle, updateData);
 
-      // Se estiver offline, atualiza o estado local imediatamente
-      if (!isOnline()) {
+      // Se estiver offline ou se o veículo foi criado offline, atualiza o estado local imediatamente
+      if (!isOnline() || editingVehicle.startsWith('offline_')) {
+        console.log('Atualizando estado local');
         setVehicles(prev => prev.map(vehicle => 
           vehicle.id === editingVehicle 
             ? { ...vehicle, ...updateData }
@@ -260,6 +274,7 @@ const ParkingControlApp = () => {
         status: 'DENTRO'
       });
       setEditingVehicle(null);
+      console.log('Edição salva com sucesso');
     } catch (error) {
       console.error('Erro ao salvar edição:', error);
       alert('Erro ao salvar as alterações do veículo');
@@ -729,7 +744,8 @@ const ParkingControlApp = () => {
                               vehicle.status === 'DENTRO' 
                                 ? 'status-inside' 
                                 : 'status-left'
-                            }`}>
+                            }`}
+                              style={vehicle.status === 'SAIU' ? { background: '#dc3545', color: 'white', borderRadius: '16px', padding: '2px 8px', marginLeft: '8px', fontWeight: 'bold' } : { borderRadius: '16px' }}>
                               {vehicle.status}
                             </span>
                           </div>
@@ -938,67 +954,91 @@ const ParkingControlApp = () => {
                           </div>
                         </div>
                       ) : (
-                        // Modo de Visualização
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="vehicle-card-header">
-                              <span className="vehicle-plate">
-                                {vehicle.placa}
-                              </span>
-                              <span className={`vehicle-status ${
-                                vehicle.status === 'DENTRO' 
-                                  ? 'status-inside' 
-                                  : 'status-left'
-                              }`}>
-                                {vehicle.status}
-                              </span>
-                            </div>
-                            
-                            <div className="vehicle-details">
-                              {vehicle.modelo && (
-                                <div><strong>Modelo:</strong> {vehicle.modelo}</div>
-                              )}
-                              {vehicle.cor && (
-                                <div><strong>Cor:</strong> {vehicle.cor}</div>
-                              )}
-                              {vehicle.responsavel && (
-                                <div><strong>Responsável:</strong> {vehicle.responsavel}</div>
-                              )}
-                              {vehicle.telefone && (
-                                <div><strong>TAG:</strong> {vehicle.telefone}</div>
-                              )}
-                              <div><strong>Entrada:</strong> {vehicle.entrada}</div>
-                              {vehicle.saida && (
-                                <div><strong>Saída:</strong> {vehicle.saida}</div>
-                              )}
-                            </div>
-                            
-                            {vehicle.observacoes && (
-                              <div className="mt-2 text-sm">
-                                <strong>Obs:</strong> {vehicle.observacoes}
+                        <>
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="vehicle-card-header">
+                                <span className="vehicle-plate">
+                                  {vehicle.placa}
+                                </span>
+                                <span className={`vehicle-status ${
+                                  vehicle.status === 'DENTRO' 
+                                    ? 'status-inside' 
+                                    : 'status-left'
+                                }`}
+                                  style={vehicle.status === 'SAIU' ? { background: '#dc3545', color: 'white', borderRadius: '16px', padding: '2px 8px', marginLeft: '8px', fontWeight: 'bold' } : { borderRadius: '16px' }}>
+                                  {vehicle.status}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                          
-                          <div className="vehicle-actions">
-                            <button
-                              onClick={() => handleEdit(vehicle)}
-                              className="btn btn-secondary"
-                            >
-                              <EditIcon />
-                              Editar
-                            </button>
-                            {vehicle.status === 'DENTRO' && (
+                              
+                              <div className="vehicle-details">
+                                {vehicle.modelo && (
+                                  <div><strong>Modelo:</strong> {vehicle.modelo}</div>
+                                )}
+                                {vehicle.cor && (
+                                  <div><strong>Cor:</strong> {vehicle.cor}</div>
+                                )}
+                                {vehicle.responsavel && (
+                                  <div><strong>Responsável:</strong> {vehicle.responsavel}</div>
+                                )}
+                                {vehicle.telefone && (
+                                  <div><strong>TAG:</strong> {vehicle.telefone}</div>
+                                )}
+                                <div><strong>Entrada:</strong> {vehicle.entrada}</div>
+                                {vehicle.saida && (
+                                  <div><strong>Saída:</strong> {vehicle.saida}</div>
+                                )}
+                              </div>
+                              
+                              {vehicle.observacoes && (
+                                <div className="mt-2 text-sm">
+                                  <strong>Obs:</strong> {vehicle.observacoes}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="vehicle-actions">
                               <button
-                                onClick={() => vehicle.id && handleSaida(vehicle.id)}
-                                className="btn"
+                                onClick={() => handleEdit(vehicle)}
+                                className="btn btn-secondary"
                               >
-                                <LogoutIcon />
-                                Saída
+                                <EditIcon />
+                                Editar
                               </button>
-                            )}
+                              {vehicle.status === 'DENTRO' && (
+                                <button
+                                  onClick={() => vehicle.id && handleSaida(vehicle.id)}
+                                  className="btn"
+                                >
+                                  <LogoutIcon />
+                                  Saída
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                          {activeTab === 'historico' && vehicle.status === 'SAIU' && (
+                            <button
+                              className="btn mt-2"
+                              style={{ fontSize: '0.9rem', padding: '0.3rem 1rem', background: '#28a745', color: 'white', border: 'none', borderRadius: '16px' }}
+                              onClick={() => {
+                                setFormData({
+                                  placa: vehicle.placa,
+                                  modelo: vehicle.modelo,
+                                  cor: vehicle.cor,
+                                  responsavel: vehicle.responsavel,
+                                  telefone: vehicle.telefone,
+                                  observacoes: vehicle.observacoes,
+                                  entrada: '',
+                                  saida: null,
+                                  status: 'DENTRO'
+                                });
+                                setActiveTab('entrada');
+                              }}
+                            >
+                              Reentrar
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   ))
